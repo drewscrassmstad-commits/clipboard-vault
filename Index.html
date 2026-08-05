@@ -1,0 +1,338 @@
+<div class="app">
+  <header class="topbar">
+    <div>
+      <h1>📋 Clipboard Vault</h1>
+      <p>Save it. Find it. Copy it.</p>
+    </div>
+    <button id="themeButton" class="iconButton" title="Toggle dark mode">🌙</button>
+  </header>
+
+  <main>
+    <input
+      id="search"
+      type="search"
+      placeholder="🔍 Search your clipboard..."
+      autocomplete="off"
+    />
+
+    <div class="filters">
+      <button class="filter active" data-filter="all">All</button>
+      <button class="filter" data-filter="pinned">📌 Pinned</button>
+      <button class="filter" data-filter="link">🔗 Links</button>
+      <button class="filter" data-filter="text">📝 Text</button>
+      <button class="filter" data-filter="number">🔢 Numbers</button>
+      <button class="filter" data-filter="email">📧 Emails</button>
+      <button class="filter" data-filter="code">💻 Code</button>
+    </div>
+
+    <section>
+      <div class="sectionTitle">
+        <h2>🕘 Recent</h2>
+        <button id="clearButton" class="clearButton">Clear All</button>
+      </div>
+
+      <div id="items"></div>
+    </section>
+  </main>
+
+  <button id="saveButton" class="save">
+    ＋ SAVE CLIPBOARD
+  </button>
+
+  <div id="toast" class="toast"></div>
+</div>
+
+<script>
+const STORAGE_KEY = "clipboardVaultItems";
+const THEME_KEY = "clipboardVaultTheme";
+
+let items = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+let currentFilter = "all";
+
+const search = document.getElementById("search");
+const itemsBox = document.getElementById("items");
+const saveButton = document.getElementById("saveButton");
+const toast = document.getElementById("toast");
+const themeButton = document.getElementById("themeButton");
+const clearButton = document.getElementById("clearButton");
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+}
+
+function showToast(message, undo = false) {
+  toast.innerHTML = "";
+
+  const text = document.createElement("span");
+  text.textContent = message;
+  toast.appendChild(text);
+
+  if (undo) {
+    const button = document.createElement("button");
+    button.textContent = "UNDO";
+
+    button.onclick = () => {
+      if (items.length) {
+        items.shift();
+        saveData();
+        render();
+      }
+
+      toast.classList.remove("show");
+    };
+
+    toast.appendChild(button);
+  }
+
+  toast.classList.add("show");
+
+  setTimeout(() => {
+    toast.classList.remove("show");
+  }, 2000);
+}
+
+function getType(text) {
+  const trimmed = text.trim();
+
+  if (/^https?:\/\/\S+$/i.test(trimmed)) return "link";
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "email";
+  if (/^\d+$/.test(trimmed)) return "number";
+
+  if (/^(const|let|var|function|if|else|return|class|import|export)\b/.test(trimmed)) {
+    return "code";
+  }
+
+  return "text";
+}
+
+function typeIcon(type) {
+  return {
+    link: "🔗",
+    email: "📧",
+    number: "🔢",
+    code: "💻",
+    text: "📝"
+  }[type] || "📦";
+}
+
+function formatDate(timestamp) {
+  const date = new Date(timestamp);
+
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function render() {
+  const query = search.value.toLowerCase().trim();
+
+  let filtered = items.filter(item => {
+    const matchesSearch =
+      item.text.toLowerCase().includes(query);
+
+    const matchesFilter =
+      currentFilter === "all" ||
+      (currentFilter === "pinned" && item.pinned) ||
+      item.type === currentFilter;
+
+    return matchesSearch && matchesFilter;
+  });
+
+  filtered.sort((a, b) => b.created - a.created);
+
+  itemsBox.innerHTML = "";
+
+  if (!filtered.length) {
+    itemsBox.innerHTML = `
+      <div class="empty">
+        <div>📭</div>
+        <strong>Nothing here yet</strong>
+        <span>Copy something, then tap SAVE CLIPBOARD.</span>
+      </div>
+    `;
+
+    return;
+  }
+
+  filtered.forEach(item => {
+    const card = document.createElement("article");
+    card.className = "item";
+
+    const preview = document.createElement("div");
+    preview.className = "preview";
+    preview.textContent = item.text;
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent =
+      `${typeIcon(item.type)} ${formatDate(item.created)}`;
+
+    const copy = document.createElement("button");
+    copy.className = "copy";
+    copy.textContent = "📋";
+
+    copy.onclick = async event => {
+      event.stopPropagation();
+
+      try {
+        await navigator.clipboard.writeText(item.text);
+        showToast("Copied!");
+      } catch {
+        showToast("Copy failed — try again.");
+      }
+    };
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const pin = document.createElement("button");
+    pin.textContent = item.pinned ? "📌" : "☆";
+
+    pin.onclick = event => {
+      event.stopPropagation();
+
+      item.pinned = !item.pinned;
+
+      saveData();
+      render();
+    };
+
+    const edit = document.createElement("button");
+    edit.textContent = "✏️";
+
+    edit.onclick = event => {
+      event.stopPropagation();
+
+      const edited = prompt(
+        "Edit clipboard item:",
+        item.text
+      );
+
+      if (typeof edited === "string" && edited.trim()) {
+        item.text = edited.trim();
+        item.type = getType(edited);
+
+        saveData();
+        render();
+      }
+    };
+
+    const del = document.createElement("button");
+    del.textContent = "🗑️";
+
+    del.onclick = event => {
+      event.stopPropagation();
+
+      items = items.filter(x => x.id !== item.id);
+
+      saveData();
+      render();
+
+      showToast("Deleted");
+    };
+
+    actions.append(pin, edit, del);
+
+    card.append(
+      preview,
+      meta,
+      copy,
+      actions
+    );
+
+    card.onclick = () => copy.click();
+
+    itemsBox.appendChild(card);
+  });
+}
+
+saveButton.onclick = async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+
+    if (!text.trim()) {
+      showToast("Clipboard is empty.");
+      return;
+    }
+
+    const newItem = {
+      id: Date.now(),
+      text,
+      type: getType(text),
+      pinned: false,
+      created: Date.now()
+    };
+
+    items.unshift(newItem);
+
+    saveData();
+    render();
+
+    showToast("Saved!", true);
+
+  } catch {
+    showToast("Clipboard access was blocked.");
+  }
+};
+
+clearButton.onclick = () => {
+  if (!items.length) {
+    showToast("Nothing to clear.");
+    return;
+  }
+
+  const confirmed = confirm(
+    "Delete every saved clipboard item?"
+  );
+
+  if (!confirmed) return;
+
+  items = [];
+
+  saveData();
+  render();
+
+  showToast("Everything cleared.");
+};
+
+search.addEventListener("input", render);
+
+document.querySelectorAll(".filter").forEach(button => {
+  button.onclick = () => {
+    document.querySelectorAll(".filter")
+      .forEach(b => b.classList.remove("active"));
+
+    button.classList.add("active");
+
+    currentFilter = button.dataset.filter;
+
+    render();
+  };
+});
+
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+
+  localStorage.setItem(THEME_KEY, theme);
+
+  themeButton.textContent =
+    theme === "dark" ? "☀️" : "🌙";
+}
+
+const savedTheme =
+  localStorage.getItem(THEME_KEY) || "light";
+
+setTheme(savedTheme);
+
+themeButton.onclick = () => {
+  const current =
+    document.documentElement.dataset.theme;
+
+  setTheme(current === "dark" ? "light" : "dark");
+};
+
+render();
+</script>
