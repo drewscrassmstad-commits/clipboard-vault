@@ -1,0 +1,10 @@
+{
+  "name": "Clipboard Vault",
+  "short_name": "Vault",
+  "description": "A private local clipboard vault.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f7",
+  "theme_color": "#111111",
+  "orientation": "portrait"
+}
